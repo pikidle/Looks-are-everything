@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>오늘의 인연</title>
+  <meta name="description" content="입력한 정보를 바탕으로 잘 맞는 상대와 추천 이유를 보여주는 매칭 데모">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section id="intro" class="intro">
+      <p class="intro-badge">AI 매칭 데모</p>
+      <h1>오늘의 인연</h1>
+      <p class="intro-text">몇 가지 질문에 답하면<br>잘 맞는 상대와 그 이유를 함께 보여드릴게요.</p>
+      <button type="button" id="start" class="btn primary large">시작하기</button>
+      <p id="intro-meta" class="intro-meta"></p>
+      <p class="intro-meta">가상 후보 100명으로 동작하는 데모입니다.</p>
+    </section>
+
+    <form id="profile-form" class="wizard" novalidate hidden>
+      <div id="wizard-pages"></div>
+      <div class="wizard-nav">
+        <button type="button" id="prev" class="btn ghost">이전</button>
+        <button type="button" id="next" class="btn primary">다음</button>
+      </div>
+    </form>
+
+    <section id="results" class="panel" hidden></section>
+    <section id="logic" class="panel" hidden></section>
+  </main>
+
+  <div id="progress" class="progress" role="progressbar" aria-label="진행도" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+    <div class="progress-inner">
+      <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+      <span id="progress-label" class="progress-label"></span>
+    </div>
+  </div>
+
+  <script src="constants.js"></script>
+  <script src="candidates.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
