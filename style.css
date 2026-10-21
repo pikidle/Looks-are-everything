@@ -299,34 +299,130 @@ h4 { margin: 20px 0 6px; }
 .tag.match { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .tag small { color: var(--muted); font-weight: 400; }
 
-.card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
+.highlight { margin: 10px 0 0; font-size: 0.9rem; }
+.results-sub { margin: -6px 0 18px; color: var(--muted); font-size: 0.92rem; }
+
+/* ---------- TOP 3 ---------- */
+/* 점수 링이 0에서 차오르도록 --p를 숫자로 등록한다. (미지원 브라우저는 바로 최종값 표시) */
+@property --p { syntax: "<number>"; inherits: false; initial-value: 0; }
+
+.podium { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.podium-card {
+  --medal: #e3a008;
+  --medal-soft: rgba(227, 160, 8, 0.14);
+  position: relative;
+  padding: 18px;
+  border: 1.5px solid var(--line);
+  border-top: 4px solid var(--medal);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--medal-soft), transparent 120px), var(--panel);
+  animation: pop-in 0.6s var(--ease) var(--delay) both;
 }
-.card + .card { margin-top: 14px; }
-.card-head { display: flex; align-items: center; gap: 12px; }
+.podium-card.rank-1 {
+  grid-column: 1 / -1;
+  padding: 24px;
+  border-color: var(--medal);
+  box-shadow: 0 10px 30px -12px var(--medal);
+}
+.podium-card.rank-2 { --medal: #8a97a8; --medal-soft: rgba(138, 151, 168, 0.16); }
+.podium-card.rank-3 { --medal: #c0743a; --medal-soft: rgba(192, 116, 58, 0.14); }
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 사진 모서리에 붙는 원형 메달 */
 .pic { position: relative; flex-shrink: 0; }
-.rank {
+.medal {
   position: absolute;
   top: -4px;
   left: -4px;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--panel);
   border-radius: 50%;
-  border: 2px solid var(--accent);
-  background: var(--panel);
-  color: var(--accent);
-  font-size: 0.8rem;
-  font-weight: 700;
+  background: var(--medal);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
-.who { flex: 1; min-width: 0; }
-.total { text-align: right; }
-.total strong { font-size: 1.8rem; color: var(--accent); }
-.total span { color: var(--muted); margin-left: 2px; }
-.highlight { margin: 10px 0 0; font-size: 0.9rem; }
+.rank-1 .medal { width: 44px; height: 44px; font-size: 1.25rem; top: -2px; left: -2px; }
+.avatar-podium { width: 128px; height: 128px; font-size: 1.6rem; }
+
+.podium-head { display: flex; align-items: center; gap: 20px; }
+.podium-who { flex: 1; min-width: 0; }
+.podium-who h3 { font-size: 1.5rem; }
+/* 2·3위: 사진과 점수 링을 윗줄에, 이름·정보를 아랫줄에 둔다 */
+.podium-card:not(.rank-1) .podium-head { flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.podium-card:not(.rank-1) .podium-who { order: 3; flex-basis: 100%; }
+.podium-card:not(.rank-1) .podium-who h3 { font-size: 1.15rem; }
+
+.score-ring {
+  --size: 76px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: var(--size);
+  height: var(--size);
+  flex-shrink: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, var(--panel) 78%, transparent 80%),
+    conic-gradient(var(--medal) calc(var(--p) * 1%), var(--line) 0);
+  animation: ring-fill 1.1s var(--ease) calc(var(--delay) + 200ms) both;
+}
+.rank-1 .score-ring { --size: 104px; }
+.score-ring strong { font-size: 1.25rem; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.rank-1 .score-ring strong { font-size: 1.7rem; }
+.score-ring span { font-size: 0.72rem; color: var(--muted); }
+@keyframes ring-fill { from { --p: 0; } }
+
+.more-detail { margin-top: 12px; }
+.more-detail > summary {
+  display: inline-block;
+  padding: 4px 0;
+  color: var(--accent-text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.more-detail > summary::after { content: " ▾"; }
+.more-detail[open] > summary::after { content: " ▴"; }
+
+/* ---------- 4위 이하 ---------- */
+.more-btn { display: block; width: 100%; margin-top: 18px; padding: 12px; }
+.rest { margin-top: 22px; }
+.rest-title { margin: 0 0 8px; font-size: 1rem; color: var(--muted); }
+.rank-row {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  animation: fade-up 0.4s var(--ease) var(--delay) both;
+}
+.rank-row + .rank-row { margin-top: 8px; }
+.rank-row > summary {
+  display: grid;
+  grid-template-columns: 28px 44px 1fr 120px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.rank-row[open] > summary { border-bottom: 1px solid var(--line); }
+.row-rank { color: var(--muted); font-weight: 800; text-align: center; }
+.row-who { min-width: 0; display: flex; flex-direction: column; }
+.row-who small { color: var(--muted); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-score { display: flex; align-items: center; gap: 8px; }
+.row-score .bar { flex: 1; }
+.row-score b { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.row-body { padding: 4px 14px 14px; }
+.avatar-sm { width: 44px; height: 44px; font-size: 0.85rem; }
 
 /* AI 추천 이유 */
 .ai-reason {
@@ -369,8 +465,8 @@ h4 { margin: 20px 0 6px; }
 .ai-status a { color: var(--accent-text); }
 
 .breakdown { margin-top: 12px; border-top: 1px solid var(--line); }
-details { border-bottom: 1px solid var(--line); }
-summary {
+.breakdown details { border-bottom: 1px solid var(--line); }
+.breakdown summary {
   display: grid;
   grid-template-columns: 112px 1fr 70px;
   align-items: center;
@@ -383,12 +479,12 @@ summary {
 summary::-webkit-details-marker { display: none; }
 .part-title { white-space: nowrap; }
 .part-title::before { content: "▸ "; color: var(--muted); }
-details[open] .part-title::before { content: "▾ "; }
+.breakdown details[open] > summary .part-title::before { content: "▾ "; }
 .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .part-pts { text-align: right; font-variant-numeric: tabular-nums; }
 .part-summary { margin: 0 0 4px; font-size: 0.88rem; font-weight: 600; }
-details ul { margin: 0 0 10px; padding-left: 18px; font-size: 0.85rem; color: var(--muted); }
+.breakdown details ul { margin: 0 0 10px; padding-left: 18px; font-size: 0.85rem; color: var(--muted); }
 
 .bio { margin-top: 12px; font-size: 0.9rem; }
 .bio p { margin: 4px 0 0; }
@@ -428,8 +524,16 @@ td:nth-child(2) { white-space: nowrap; font-weight: 700; }
   .intro h1 { font-size: 2.2rem; }
   .choices.mbti { grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .big-input input { width: 92px; }
-  summary { grid-template-columns: 104px 1fr 62px; }
-  .total strong { font-size: 1.5rem; }
+  .breakdown summary { grid-template-columns: 104px 1fr 62px; }
+  .podium { grid-template-columns: 1fr; }
+  .podium-card, .podium-card.rank-1 { padding: 18px; }
+  .rank-1 .podium-head { flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  .rank-1 .podium-who { order: 3; flex-basis: 100%; }
+  .rank-1 .podium-who h3 { font-size: 1.3rem; }
+  .avatar-podium { width: 104px; height: 104px; }
+  .rank-1 .score-ring { --size: 92px; }
+  .rank-row > summary { grid-template-columns: 22px 40px 1fr 72px; gap: 10px; padding: 10px 12px; }
+  .row-score .bar { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

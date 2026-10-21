@@ -351,11 +351,18 @@
       </div>`;
   }
 
-  function renderCard(result, rank) {
-    const c = result.candidate;
-    const best = result.parts.slice().sort((a, b) => b.pts - a.pts)[0];
-    const common = result.parts[1].common;
+  const metaOf = c => `${c.age}세 · ${GENDER_LABEL[c.gender]} · ${esc(c.region)}${c.mbti ? ` · ${c.mbti}` : ''}`;
+  const bestPart = result => result.parts.slice().sort((a, b) => b.pts - a.pts)[0];
+  const AI_BOX = `
+    <div class="ai-reason" hidden>
+      <p class="ai-label">AI 추천 이유</p>
+      <div class="ai-text"></div>
+    </div>`;
 
+  // 항목별 점수 막대 + 근거, 태그, 자기소개. TOP 3 카드와 4위 이하 목록이 함께 쓴다.
+  function detailHtml(result) {
+    const c = result.candidate;
+    const common = result.parts[1].common;
     const parts = result.parts.map(p => `
       <details>
         <summary>
@@ -366,34 +373,99 @@
         <p class="part-summary">${esc(p.summary)}</p>
         <ul>${p.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       </details>`).join('');
-
     const tags = c.tags.map(t => `<span class="tag${common.includes(t) ? ' match' : ''}">${esc(t)}</span>`).join('');
-
     return `
-      <article class="card">
-        <header class="card-head">
+      <div class="breakdown">${parts}</div>
+      <div class="tag-list">${tags}</div>
+      <div class="bio">
+        <p><b>자기소개</b> ${c.intro ? esc(c.intro) : '<span class="muted">작성하지 않았어요</span>'}</p>
+        <p><b>이상형</b> ${c.ideal ? esc(c.ideal) : '<span class="muted">작성하지 않았어요</span>'}</p>
+      </div>`;
+  }
+
+  // 1~3위: 큰 사진, 메달, 차오르는 점수 링으로 강조한다. --delay로 순서대로 등장시킨다.
+  function renderPodiumCard(result, i) {
+    const c = result.candidate;
+    const best = bestPart(result);
+    const common = result.parts[1].common;
+    return `
+      <article class="podium-card rank-${i + 1}" data-index="${i}" style="--delay:${i * 180}ms">
+        <div class="podium-head">
           <div class="pic">
-            ${avatar(c.photo, c.name, 'avatar-md')}
-            <span class="rank">${rank}</span>
+            ${avatar(c.photo, c.name, i === 0 ? 'avatar-podium' : 'avatar-lg')}
+            <span class="medal" aria-label="${i + 1}위">${i + 1}</span>
           </div>
-          <div class="who">
+          <div class="podium-who">
             <h3>${esc(c.name)}</h3>
-            <p class="meta">${c.age}세 · ${GENDER_LABEL[c.gender]} · ${esc(c.region)}${c.mbti ? ` · ${c.mbti}` : ''}</p>
+            <p class="meta">${metaOf(c)}</p>
           </div>
-          <div class="total"><strong>${fmt(result.total)}</strong><span>점</span></div>
-        </header>
+          <div class="score-ring" style="--p:${result.total}">
+            <strong data-count="${result.total}">0</strong><span>점</span>
+          </div>
+        </div>
+        ${common.length ? `<div class="tag-list">${common.map(t => `<span class="tag match">${esc(t)}</span>`).join('')}</div>` : ''}
         ${best.pts > 0 ? `<p class="highlight">가장 큰 점수를 받은 항목: <b>${best.title}</b> (${fmt(best.pts)} / ${best.max})</p>` : ''}
-        <div class="ai-reason" hidden>
-          <p class="ai-label">AI 추천 이유</p>
-          <div class="ai-text"></div>
-        </div>
-        <div class="breakdown">${parts}</div>
-        <div class="tag-list">${tags}</div>
-        <div class="bio">
-          <p><b>자기소개</b> ${c.intro ? esc(c.intro) : '<span class="muted">작성하지 않았어요</span>'}</p>
-          <p><b>이상형</b> ${c.ideal ? esc(c.ideal) : '<span class="muted">작성하지 않았어요</span>'}</p>
-        </div>
+        ${AI_BOX}
+        <details class="more-detail">
+          <summary>점수 자세히 보기</summary>
+          ${detailHtml(result)}
+        </details>
       </article>`;
+  }
+
+  // 4위 이하: 한 줄로 접어 두고, 누르면 상세가 펼쳐진다.
+  function renderRow(result, i) {
+    const c = result.candidate;
+    return `
+      <details class="rank-row" data-index="${i}" style="--delay:${(i - C.PODIUM_N) * 60}ms">
+        <summary>
+          <span class="row-rank">${i + 1}</span>
+          ${avatar(c.photo, c.name, 'avatar-sm')}
+          <span class="row-who"><b>${esc(c.name)}</b><small>${metaOf(c)}</small></span>
+          <span class="row-score"><span class="bar"><i style="width:${result.total}%"></i></span><b>${fmt(result.total)}</b></span>
+        </summary>
+        <div class="row-body">${AI_BOX}${detailHtml(result)}</div>
+      </details>`;
+  }
+
+  function renderResults(me, rec) {
+    if (!rec.top.length) {
+      return '<p class="empty">조건을 모두 만족하는 후보가 없어요. 나이 범위를 넓히거나 거리를 \'어디든 괜찮아요\'로 바꿔 보세요.</p>';
+    }
+    const podium = rec.top.slice(0, C.PODIUM_N);
+    const rest = rec.top.slice(C.PODIUM_N);
+    return `
+      <p class="results-sub">조건을 통과한 ${rec.passedCount}명 중 가장 잘 맞는 분들이에요</p>
+      <div class="podium">${podium.map(renderPodiumCard).join('')}</div>
+      ${rest.length ? `
+        <div class="rest" id="rest" hidden>
+          <h3 class="rest-title">${C.PODIUM_N + 1}위 ~ ${C.PODIUM_N + rest.length}위</h3>
+          ${rest.map((r, k) => renderRow(r, C.PODIUM_N + k)).join('')}
+        </div>
+        <button type="button" class="btn ghost more-btn" id="more" data-count="${rest.length}">
+          ${C.PODIUM_N + 1}위 ~ ${C.PODIUM_N + rest.length}위 더보기 (${rest.length}명)
+        </button>` : ''}`;
+  }
+
+  // 점수 숫자가 0부터 올라가는 애니메이션. 카드 등장 순서(--delay)에 맞춰 시작한다.
+  function countUp(root) {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    root.querySelectorAll('.score-ring [data-count]').forEach((el, i) => {
+      const target = Number(el.dataset.count);
+      if (reduce) { el.textContent = fmt(target); return; }
+      const delay = i * 180 + 200;
+      const duration = 1100;
+      // 탭이 백그라운드면 requestAnimationFrame이 멈추므로, 끝날 시간에는 최종값을 확실히 넣어 둔다.
+      setTimeout(() => { el.textContent = fmt(target); }, delay + duration + 50);
+      let t0 = null;
+      const tick = now => {
+        if (t0 === null) t0 = now + delay;
+        const k = Math.min(1, Math.max(0, (now - t0) / duration));
+        el.textContent = fmt(target * (1 - Math.pow(1 - k, 3)));
+        if (k < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
   }
 
   function renderLogic(me, rec) {
@@ -446,7 +518,7 @@
 
       <div class="step">
         <h3><span class="num">3</span>정렬</h3>
-        <p>필터를 통과한 후보를 총점이 높은 순서로 정렬해서 상위 ${C.TOP_N}명을 추천해요. 사진, 자기소개, 이상형은 점수에 반영하지 않고 보여주기만 해요. 외모 판단은 점수가 아니라 직접 보고 하는 게 가장 정확하니까요.</p>
+        <p>필터를 통과한 후보를 총점이 높은 순서로 정렬해서 상위 ${C.TOP_N}명을 추천하고, 그중 1~${C.PODIUM_N}위는 크게 보여줘요. 사진, 자기소개, 이상형은 점수에 반영하지 않고 보여주기만 해요. 외모 판단은 점수가 아니라 직접 보고 하는 게 가장 정확하니까요.</p>
       </div>
 
       <div class="step">
@@ -506,43 +578,53 @@
     }
   }
 
-  async function runAi(me, top) {
-    if (aiRun) aiRun.abort();
-    const ctrl = new AbortController();
-    aiRun = ctrl;
+  // CPU에서는 한 번에 하나씩만 생성할 수 있어서, 요청을 줄 세워(chain) 차례로 처리한다.
+  // TOP 3는 결과가 뜨자마자, 4위 이하는 펼쳤을 때만 줄에 넣는다.
+  function queueAi(index) {
+    const ctx = aiRun;
+    if (!ctx || !ctx.status || !ctx.status.ok || ctx.queued.has(index)) return;
+    ctx.queued.add(index);
+    const box = document.querySelector(`#results [data-index="${index}"] .ai-reason`);
+    box.hidden = false;
+    setAi(box, 'waiting', ctx.queued.size === 1 ? 'AI 모델을 불러오고 있어요' : '차례를 기다리고 있어요');
+    ctx.chain = ctx.chain.then(() => explainInto(ctx, box, ctx.top[index]));
+  }
 
-    const status = await LLM.checkAvailable();
-    if (ctrl.signal.aborted) return;
-    renderAiStatus(status);
-    if (!status.ok) return;
-
-    const boxes = [...document.querySelectorAll('#results .ai-reason')];
-    boxes.forEach((box, i) => {
-      box.hidden = false;
-      setAi(box, 'waiting', i === 0 ? 'AI 모델을 불러오고 있어요' : '차례를 기다리고 있어요');
-    });
-
-    for (let i = 0; i < top.length; i++) {
-      const box = boxes[i];
-      if (i > 0) setAi(box, 'waiting', 'AI가 추천 이유를 쓰고 있어요');
-      try {
-        const out = await LLM.explain(
-          { me, candidate: top[i].candidate, parts: top[i].parts, isRare },
-          {
-            signal: ctrl.signal,
-            onToken: text => setAi(box, 'streaming', text),
-            onRetry: () => setAi(box, 'waiting', '문장을 한 번 더 다듬고 있어요'),
-          },
-        );
-        if (ctrl.signal.aborted) return;
-        if (out.source === 'llm') setAi(box, 'done', out.text);
-        else if (out.source === 'fallback') setAiFacts(box, out.facts);
-        else box.hidden = true;
-      } catch (err) {
-        if (ctrl.signal.aborted) return;
-        setAi(box, 'error', 'AI 설명을 만들지 못했어요. Ollama가 실행 중인지 확인해 주세요.');
-      }
+  async function explainInto(ctx, box, result) {
+    if (ctx.ctrl.signal.aborted) return;
+    if (ctx.done > 0) setAi(box, 'waiting', 'AI가 추천 이유를 쓰고 있어요');
+    try {
+      const out = await LLM.explain(
+        { me: ctx.me, candidate: result.candidate, parts: result.parts, isRare },
+        {
+          signal: ctx.ctrl.signal,
+          onToken: text => setAi(box, 'streaming', text),
+          onRetry: () => setAi(box, 'waiting', '문장을 한 번 더 다듬고 있어요'),
+        },
+      );
+      if (ctx.ctrl.signal.aborted) return;
+      if (out.source === 'llm') setAi(box, 'done', out.text);
+      else if (out.source === 'fallback') setAiFacts(box, out.facts);
+      else box.hidden = true;
+    } catch (err) {
+      if (ctx.ctrl.signal.aborted) return;
+      setAi(box, 'error', 'AI 설명을 만들지 못했어요. Ollama가 실행 중인지 확인해 주세요.');
+    } finally {
+      ctx.done++;
     }
+  }
+
+  async function runAi(me, top) {
+    if (aiRun) aiRun.ctrl.abort();
+    const ctx = { me, top, status: null, ctrl: new AbortController(), chain: Promise.resolve(), queued: new Set(), done: 0 };
+    aiRun = ctx;
+
+    ctx.status = await LLM.checkAvailable();
+    if (ctx.ctrl.signal.aborted) return;
+    renderAiStatus(ctx.status);
+    for (let i = 0; i < Math.min(C.PODIUM_N, top.length); i++) queueAi(i);
+    // 연결 확인 중에 이미 펼쳐 둔 4위 이하가 있으면 이어서 처리한다.
+    document.querySelectorAll('#results .rank-row[open]').forEach(row => queueAi(Number(row.dataset.index)));
   }
 
   // ---------- 화면 전환 + 진행도 게이지 ----------
@@ -608,7 +690,7 @@
   }
 
   function start() {
-    if (aiRun) aiRun.abort();
+    if (aiRun) aiRun.ctrl.abort();
     $('#intro').hidden = true;
     $('#results').hidden = true;
     $('#logic').hidden = true;
@@ -624,13 +706,11 @@
     const rec = recommend(me);
     $('#results').innerHTML = `
       <div class="results-head">
-        <h2>추천 상대</h2>
+        <h2>${esc(me.name)}님과 잘 맞는 TOP ${Math.min(C.PODIUM_N, rec.top.length) || ''}</h2>
         <button type="button" class="btn ghost" id="restart">답변 수정하기</button>
       </div>
-      ${renderMe(me)}
-      ${rec.top.length
-        ? rec.top.map((r, i) => renderCard(r, i + 1)).join('')
-        : '<p class="empty">조건을 모두 만족하는 후보가 없어요. 나이 범위를 넓히거나 거리를 \'어디든 괜찮아요\'로 바꿔 보세요.</p>'}`;
+      ${renderResults(me, rec)}
+      ${renderMe(me)}`;
     $('#logic').innerHTML = renderLogic(me, rec);
 
     setTimeout(() => {
@@ -639,6 +719,7 @@
       $('#results').hidden = false;
       $('#logic').hidden = false;
       window.scrollTo({ top: 0 });
+      countUp($('#results'));
       runAi(me, rec.top);
     }, 650);
   }
@@ -650,7 +731,20 @@
     $('#prev').addEventListener('click', prev);
     $('#results').addEventListener('click', e => {
       if (e.target.id === 'restart') start();
+      const more = e.target.closest('#more');
+      if (more) {
+        const rest = $('#rest');
+        rest.hidden = !rest.hidden;
+        more.textContent = rest.hidden
+          ? `${C.PODIUM_N + 1}위 ~ ${C.PODIUM_N + Number(more.dataset.count)}위 더보기 (${more.dataset.count}명)`
+          : '접기';
+        if (!rest.hidden) rest.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
+    // <details>의 toggle 이벤트는 버블링되지 않아서 캡처 단계에서 받는다.
+    $('#results').addEventListener('toggle', e => {
+      if (e.target.matches('.rank-row') && e.target.open) queueAi(Number(e.target.dataset.index));
+    }, true);
 
     form.addEventListener('submit', e => e.preventDefault());
     form.addEventListener('keydown', e => {

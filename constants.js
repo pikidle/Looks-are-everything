@@ -25,7 +25,8 @@ window.MATCH_CONFIG = {
     'ESTP', 'ESFP', 'ENFP', 'ENTP', 'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ',
   ],
 
-  TOP_N: 5,
+  TOP_N: 10,    // 추천 인원
+  PODIUM_N: 3,  // 그중 크게 보여줄 상위 인원 (나머지는 '더보기')
 
   WEIGHTS: {
     lifestyleByDiff: [10, 5, 0],   // 문항당 점수: 같음 / 한 칸 차이 / 두 칸 차이
