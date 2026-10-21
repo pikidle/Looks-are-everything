@@ -107,12 +107,6 @@
       validate: p => (p.gender ? '' : '성별을 선택해 주세요.'),
     },
     {
-      title: '어떤 분을 만나고 싶으세요?',
-      auto: true,
-      body: choices('wantGender', [['male', '남성'], ['female', '여성'], ['any', '상관없음']]),
-      validate: p => (p.wantGender ? '' : '원하는 상대 성별을 선택해 주세요.'),
-    },
-    {
       title: '나이가 어떻게 되세요?',
       body: `
         <div class="big-input">
@@ -165,6 +159,24 @@
       validate: p => (p.tags.length ? '' : '관심사를 1개 이상 골라 주세요.'),
     },
     {
+      title: '연애에서 중요한 순서대로 눌러 주세요',
+      hint: '가장 중요한 것부터 차례로 누르면 번호가 매겨져요. 다시 누르면 취소돼요.',
+      body: `
+        <div class="rank-pick" id="rank-pick">${C.VALUES.map(v => `
+          <button type="button" class="rank-item" data-value="${v}"><span class="rank-no"></span><span>${v}</span></button>`).join('')}
+        </div>
+        <input type="hidden" name="values" id="values-input">
+        <button type="button" class="btn ghost rank-reset" id="rank-reset">다시 고르기</button>`,
+      validate: p => (p.values.length === C.VALUES.length ? '' : `${C.VALUES.length}가지를 모두 순서대로 눌러 주세요.`),
+    },
+    {
+      title: '자신의 외모는 어떻다고 생각하시나요?',
+      hint: `1~3점 ${C.LOOKS_TIERS[0].label} · 4~7점 ${C.LOOKS_TIERS[1].label} · 8~10점 ${C.LOOKS_TIERS[2].label}`,
+      auto: true,
+      body: choices('looks', Array.from({ length: 10 }, (_, i) => [i + 1, `${i + 1}`]), 'grid scale'),
+      validate: p => (Number.isNaN(p.looks) ? '점수를 하나 골라 주세요.' : ''),
+    },
+    {
       title: 'MBTI를 알려 주세요',
       hint: '재미로만 참고해요. 모르면 넘어가도 괜찮아요.',
       auto: true,
@@ -215,13 +227,16 @@
     return {
       name: (fd.get('name') || '').trim(),
       gender: fd.get('gender'),
-      wantGender: fd.get('wantGender'),
+      // 상대 성별은 따로 묻지 않고 내 성별의 반대로 정한다.
+      wantGender: { male: 'female', female: 'male' }[fd.get('gender')] || null,
       age: num('age'),
       wantAge: [num('wantAgeMin'), num('wantAgeMax')],
       region: fd.get('region'),
       regionPref: fd.get('regionPref'),
       lifestyle: Object.fromEntries(C.LIFESTYLE.map(q => [q.key, num(q.key)])),
       tags: fd.getAll('tags'),
+      values: (fd.get('values') || '').split(',').filter(Boolean),
+      looks: num('looks'),
       mbti: fd.get('mbti') || null,
       photo: photoUrl,
       intro: (fd.get('intro') || '').trim(),
@@ -283,6 +298,40 @@
     };
   }
 
+  // 두 사람의 순위가 얼마나 비슷한지: 항목별 순위 차이를 모두 더한 값(풋룰 거리)을 최대값으로 나눠 뒤집는다.
+  // 5개 항목이면 순위 차이 합의 최대는 12 (완전히 거꾸로일 때).
+  const VALUES_MAX_DIST = Math.floor((C.VALUES.length ** 2) / 2);
+  function scoreValues(me, c) {
+    const dist = C.VALUES.reduce((sum, v) => sum + Math.abs(me.values.indexOf(v) - c.values.indexOf(v)), 0);
+    const ratio = 1 - dist / VALUES_MAX_DIST;
+    const pts = round1(ratio * W.values);
+    const sameTop = me.values[0] === c.values[0];
+    return {
+      title: '가치관', pts, max: W.values,
+      summary: sameTop ? `둘 다 '${c.values[0]}'을(를) 가장 중요하게 생각함` : `순위 차이 합 ${dist} / 최대 ${VALUES_MAX_DIST}`,
+      lines: [
+        `나: ${me.values.join(' > ')}`,
+        `상대: ${c.values.join(' > ')}`,
+        `계산: (1 - ${dist} ÷ ${VALUES_MAX_DIST}) × ${W.values} = ${fmt(pts)}점`,
+      ],
+    };
+  }
+
+  const looksTier = score => C.LOOKS_TIERS.findIndex(t => score <= t.max);
+  function scoreLooks(me, c) {
+    const mine = C.LOOKS_TIERS[looksTier(me.looks)];
+    const theirs = C.LOOKS_TIERS[looksTier(c.looks)];
+    const same = mine === theirs;
+    return {
+      title: '외모 구간', pts: same ? W.looks : 0, max: W.looks,
+      summary: same ? `둘 다 '${mine.name}' 구간` : '다른 구간',
+      lines: [
+        `외모 자기평가: 나 ${me.looks}점(${mine.name}) · 상대 ${c.looks}점(${theirs.name})`,
+        same ? `같은 구간 → ${W.looks}점` : '다른 구간 → 0점',
+      ],
+    };
+  }
+
   function scoreRegion(me, c) {
     const same = me.region === c.region;
     return {
@@ -313,7 +362,11 @@
   }
 
   function score(me, c) {
-    const parts = [scoreLifestyle(me, c), scoreInterests(me, c), scoreRegion(me, c), scoreMbti(me, c)];
+    // 순서 주의: 관심사는 parts[1]에 있어야 한다. (겹친 태그 강조에 사용)
+    const parts = [
+      scoreLifestyle(me, c), scoreInterests(me, c), scoreValues(me, c),
+      scoreRegion(me, c), scoreLooks(me, c), scoreMbti(me, c),
+    ];
     const total = round1(parts.reduce((sum, p) => sum + p.pts, 0));
     return { candidate: c, parts, total };
   }
@@ -481,7 +534,7 @@
         <h3><span class="num">1</span>조건 필터 (양방향)</h3>
         <p>나의 조건과 <b>상대의 조건</b>을 모두 만족해야 후보가 돼요. 하나라도 어긋나면 점수를 계산하지 않고 제외해요.</p>
         <ul>
-          <li><b>성별</b>: 내가 원하는 성별 = 상대 성별, 그리고 상대가 원하는 성별 = 내 성별</li>
+          <li><b>성별</b>: 상대가 내 반대 성별이고, 상대가 원하는 성별도 내 성별이어야 함</li>
           <li><b>나이</b>: 상대가 내 범위 안에 있고, 나도 상대 범위 안에 있어야 함</li>
           <li><b>지역</b>: 둘 중 한 명이라도 '같은 시·도만'을 골랐다면 같은 지역이어야 함</li>
         </ul>
@@ -501,7 +554,9 @@
           <tbody>
             <tr><td>라이프스타일</td><td>${LIFESTYLE_MAX}</td><td>${C.LIFESTYLE.length}문항 × ${W.lifestyleByDiff[0]}점. 같으면 ${W.lifestyleByDiff[0]}점, 한 칸 차이 ${W.lifestyleByDiff[1]}점, 두 칸 차이 ${W.lifestyleByDiff[2]}점</td></tr>
             <tr><td>관심사</td><td>${W.interests}</td><td>희귀도 가중 다이스 계수 × ${W.interests}</td></tr>
+            <tr><td>가치관</td><td>${W.values}</td><td>${C.VALUES.join('·')}의 중요도 순위가 비슷할수록 높음. (1 - 순위 차이 합 ÷ ${VALUES_MAX_DIST}) × ${W.values}</td></tr>
             <tr><td>지역</td><td>${W.region}</td><td>같은 시·도면 ${W.region}점</td></tr>
+            <tr><td>외모 구간</td><td>${W.looks}</td><td>외모 자기평가(1~10점)가 같은 구간이면 ${W.looks}점. 구간: 1~3 · 4~7 · 8~10</td></tr>
             <tr><td>MBTI</td><td>${MBTI_MAX}</td><td>E/I 다름 ${W.mbti.EI}점, N/S 같음 ${W.mbti.NS}점, T/F 같음 ${W.mbti.TF}점 (재미용, 둘 다 입력 시)</td></tr>
           </tbody>
         </table>
@@ -514,11 +569,18 @@
         </ul>
         <p class="muted">태그별 선택 인원과 희귀도 (내가 고른 태그는 강조 표시)</p>
         <div class="tag-list">${rarityRows}</div>
+
+        <h4>가치관 점수는 어떻게 계산하나요?</h4>
+        <p class="formula">가치관 점수 = (1 - 항목별 순위 차이의 합 ÷ ${VALUES_MAX_DIST}) × ${W.values}</p>
+        <ul>
+          <li>예: 나는 성격을 1위, 상대는 3위로 골랐다면 그 항목의 차이는 2예요. ${C.VALUES.length}개 항목의 차이를 모두 더해요.</li>
+          <li>순서가 완전히 같으면 차이 합이 0이라 만점, 완전히 거꾸로면 ${VALUES_MAX_DIST}라 0점이에요.</li>
+        </ul>
       </div>
 
       <div class="step">
         <h3><span class="num">3</span>정렬</h3>
-        <p>필터를 통과한 후보를 총점이 높은 순서로 정렬해서 상위 ${C.TOP_N}명을 추천하고, 그중 1~${C.PODIUM_N}위는 크게 보여줘요. 사진, 자기소개, 이상형은 점수에 반영하지 않고 보여주기만 해요. 외모 판단은 점수가 아니라 직접 보고 하는 게 가장 정확하니까요.</p>
+        <p>필터를 통과한 후보를 총점이 높은 순서로 정렬해서 상위 ${C.TOP_N}명을 추천하고, 그중 1~${C.PODIUM_N}위는 크게 보여줘요. 사진, 자기소개, 이상형은 점수에 반영하지 않고 보여주기만 해요. 외모는 사진이 아니라 본인이 매긴 자기평가 구간만 점수에 써요.</p>
       </div>
 
       <div class="step">
@@ -775,7 +837,42 @@
     });
   }
 
+  // 연애 가치관 순위: 누른 순서대로 번호를 매긴다. 다시 누르면 빠지고 뒤 번호가 하나씩 당겨진다.
+  function setupRankPick() {
+    const order = [];
+    const input = $('#values-input');
+    const render = () => {
+      document.querySelectorAll('#rank-pick .rank-item').forEach(btn => {
+        const n = order.indexOf(btn.dataset.value);
+        btn.classList.toggle('picked', n >= 0);
+        btn.setAttribute('aria-pressed', String(n >= 0));
+        btn.querySelector('.rank-no').textContent = n >= 0 ? n + 1 : '';
+      });
+      input.value = order.join(',');
+      input.dispatchEvent(new Event('input', { bubbles: true })); // 오류 문구를 지우고 버튼 문구를 갱신
+    };
+    $('#rank-pick').addEventListener('click', e => {
+      const btn = e.target.closest('.rank-item');
+      if (!btn) return;
+      const i = order.indexOf(btn.dataset.value);
+      if (i >= 0) order.splice(i, 1);
+      else order.push(btn.dataset.value);
+      render();
+      // 다 고르면 마지막 번호가 보이도록 잠깐 기다렸다가 넘긴다.
+      if (order.length === C.VALUES.length) {
+        const index = current;
+        clearTimeout(autoTimer);
+        autoTimer = setTimeout(() => { if (current === index) next(); }, 450);
+      }
+    });
+    $('#rank-reset').addEventListener('click', () => {
+      order.length = 0;
+      render();
+    });
+  }
+
   buildWizard();
   setupPhoto();
+  setupRankPick();
   setupWizard();
 })();

@@ -66,12 +66,25 @@ window.MatchLLM = (function () {
   // 한국 이름은 첫 글자를 성으로 보고 뗀다. (김수아 → 수아님)
   const callNameOf = name => `${name.length >= 3 ? name.slice(1) : name}님`;
 
+  // 받침에 따라 을/를을 붙인다. (성격을, 키를)
+  const withEul = word => {
+    const code = word.charCodeAt(word.length - 1) - 0xac00;
+    return `${word}${code >= 0 && code <= 11171 && code % 28 ? '을' : '를'}`;
+  };
+
   function buildFacts({ me, candidate: c, parts, isRare }) {
     const facts = [];
     const common = me.tags.filter(t => c.tags.includes(t))
       .sort((a, b) => Number(isRare(b)) - Number(isRare(a)));
     if (common.length) {
       facts.push(`함께 좋아하는 것: ${common.map(t => (isRare(t) ? `${t}(드문 취미)` : t)).join(', ')}`);
+    }
+    // 연애 가치관. 외모 자기평가는 문장으로 언급하면 불편할 수 있어 넘기지 않는다.
+    const values = parts.find(p => p.title === '가치관');
+    if (me.values && c.values && me.values[0] === c.values[0]) {
+      facts.push(`둘 다 연애에서 ${withEul(c.values[0])} 가장 중요하게 생각해요`);
+    } else if (values && values.pts >= values.max * 0.75) {
+      facts.push('연애에서 중요하게 여기는 순서가 비슷해요');
     }
     Object.keys(SAME_PHRASES).forEach(key => {
       if (me.lifestyle[key] === c.lifestyle[key]) {

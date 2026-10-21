@@ -12,7 +12,7 @@
     };
   }
 
-  const rand = mulberry32(20261014);
+  let rand = mulberry32(20261014);
   const int = (min, max) => min + Math.floor(rand() * (max - min + 1));
   const pick = arr => arr[Math.floor(rand() * arr.length)];
   const chance = p => rand() < p;
@@ -125,6 +125,15 @@
       ideal: chance(0.6) ? pick(IDEALS) : '',
     });
   }
+
+  // 나중에 추가한 항목은 별도 시드로 만든다. 위 난수 순서를 건드리지 않아 기존 후보 정보가 그대로 유지된다.
+  rand = mulberry32(20261021);
+  const valuePairs = C.VALUES.map(v => [v, { 성격: 10, 외모: 6, 자산: 4, 키: 3, 학력: 3 }[v] || 3]);
+  const looksPairs = [[1, 1], [2, 2], [3, 4], [4, 7], [5, 10], [6, 12], [7, 10], [8, 7], [9, 4], [10, 2]];
+  list.forEach(c => {
+    c.values = weightedSample(valuePairs, C.VALUES.length); // 중요한 순서 (앞일수록 중요)
+    c.looks = weighted(looksPairs);                         // 외모 자기평가 1~10
+  });
 
   window.CANDIDATES = list;
 })();
