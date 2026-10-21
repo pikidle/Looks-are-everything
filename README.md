@@ -7,6 +7,56 @@
 
 `index.html`을 브라우저로 열면 됩니다.
 
+AI 추천 이유까지 보려면 아래 [AI 추천 이유 (로컬 LLM)](#ai-추천-이유-로컬-llm) 설정 후, 더블클릭 대신 간이 서버로 여세요.
+(`file://`로 열면 Ollama가 요청을 막습니다)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File serve.ps1
+# → http://localhost:8000 접속
+```
+
+## 다른 PC에서 AI 추천 이유 켜기
+
+사이트(https://pikidle.github.io/Looks-are-everything/)는 어디서나 동작합니다.
+결과 카드의 **AI 추천 이유**는 보는 사람 PC의 Ollama가 만들기 때문에, Ollama가 설치된 PC에서 아래 설정을 한 번 해 주세요.
+사진이나 답변은 외부 서버로 전송되지 않고, 모든 처리가 그 PC 안에서 이뤄집니다.
+
+### Windows: 스크립트로 한 번에
+
+이 저장소의 `setup-ai.ps1`을 내려받아 PowerShell에서 실행합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File setup-ai.ps1
+```
+
+사이트 접근 허용 → Ollama 재시작 → 모델 내려받기(약 1.6GB) → 사이트 열기를 차례로 진행합니다. 기존 Ollama 모델과 설정은 그대로 둡니다.
+
+### Windows: 직접 설정
+
+```powershell
+ollama pull exaone3.5:2.4b
+setx OLLAMA_ORIGINS "https://pikidle.github.io"
+```
+
+작업 표시줄의 Ollama 아이콘 → **Quit Ollama** → 시작 메뉴에서 Ollama를 다시 실행합니다.
+(`setx`는 기존 `OLLAMA_ORIGINS` 값을 덮어씁니다. 이미 쓰는 값이 있으면 쉼표로 이어 적어 주세요.)
+
+### macOS
+
+```bash
+ollama pull exaone3.5:2.4b
+launchctl setenv OLLAMA_ORIGINS "https://pikidle.github.io"
+```
+
+메뉴 막대의 Ollama 아이콘 → **Quit Ollama** → Ollama를 다시 실행합니다.
+(`launchctl setenv`는 재부팅하면 사라집니다.)
+
+### 확인
+
+1. **Chrome이나 Edge**로 사이트를 엽니다. Safari는 https 페이지에서 localhost 요청을 막을 수 있습니다.
+2. 브라우저가 "로컬 네트워크 기기 접근" 권한을 물으면 **허용**합니다.
+3. 결과 화면 맨 아래 "4. AI 추천 이유" 칸에 "로컬 AI가 연결되어 있어요"가 보이면 성공입니다.
+
 ## GitHub Pages 배포
 
 1. GitHub에서 새 저장소를 만듭니다.
@@ -31,6 +81,9 @@
 | `constants.js` | 선택지(지역, 태그, 라이프스타일)와 **점수 배점** |
 | `candidates.js` | 가상 후보 100명 (시드 고정, 항상 같은 데이터) |
 | `app.js` | 필터 → 점수 계산 → 결과/로직 설명 렌더링 |
+| `llm.js` | 로컬 LLM(Ollama) 연결, 프롬프트, 응답 검사 |
+| `serve.ps1` | 로컬 미리보기용 간이 웹서버 |
+| `setup-ai.ps1` | 다른 PC에서 AI 추천 이유를 켜는 설정 스크립트 (Windows) |
 
 ## 매칭 로직
 
@@ -67,3 +120,25 @@
 - 가상 후보는 사진 대신 이름 아바타로 표시됩니다. 후보 사진을 쓰려면 `photos/` 폴더에 이미지를 넣고 `candidates.js`의 `photo` 값에 경로(예: `'photos/1.jpg'`)를 지정하세요. 실제 인물 사진은 본인 동의를 받은 것만 사용해야 합니다.
 
 배점은 `constants.js`의 `WEIGHTS`에서 바꿀 수 있고, 화면의 로직 설명도 함께 바뀝니다.
+
+## AI 추천 이유 (로컬 LLM)
+
+결과 카드마다 "왜 이 사람을 추천했는지"를 로컬 LLM이 자연스러운 문장으로 풀어 줍니다.
+LLM은 **점수나 순위에 관여하지 않고**, 이미 계산된 공통점을 문장으로 엮는 역할만 합니다. 사진은 넘기지 않습니다.
+
+Ollama가 없는 방문자에게는 AI 영역이 나타나지 않고 기존 설명만 보입니다. 사이트는 그대로 동작합니다.
+
+설정 방법은 위의 [다른 PC에서 AI 추천 이유 켜기](#다른-pc에서-ai-추천-이유-켜기)를 참고하세요. `localhost`에서 여는 경우는 접근 허용 설정 없이도 동작합니다.
+
+### 동작 방식
+
+1. 코드가 두 사람의 **공통점만** 자연스러운 문장으로 정리합니다. (예: "둘 다 아침형이에요", "함께 좋아하는 것: 캠핑(드문 취미)") 다른 점은 넘기지 않아 모델이 지어낼 여지를 줄입니다.
+2. 짧은 규칙 + 모범 답안 2개로 구성한 프롬프트와 함께 모델에 보내고, 결과를 실시간으로 표시합니다.
+3. 결과를 코드로 검사합니다: 해요체 여부, 금지어(완벽·운명·최고·보장 등), 한자·영어(MBTI 제외)·숫자·이모지·느낌표, '술을 피우다' 같은 오용, 길이.
+4. 규칙을 어기면 한 번 다시 생성하고, 그래도 안 되면 공통점 목록을 그대로 보여줍니다.
+
+### 모델 바꾸기
+
+`llm.js`의 `CONFIG.model`만 바꾸면 됩니다. (예: 더 자연스럽지만 느린 `exaone3.5:7.8b`)
+
+> EXAONE은 **비상업 연구용 라이선스**(EXAONE AI Model License 1.1 - NC)입니다. 상업 서비스로 전환한다면 상업 이용이 가능한 모델로 바꿔야 합니다.

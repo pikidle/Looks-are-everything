@@ -21,6 +21,7 @@
   const N = CANDIDATES.length;
   const RARITY = Object.fromEntries(C.TAGS.map(t => [t, Math.log((N + 1) / (tagCount[t] + 1)) + 1]));
   const rarityOf = tags => tags.reduce((sum, t) => sum + RARITY[t], 0);
+  const isRare = t => tagCount[t] / N <= window.MatchLLM.CONFIG.rareShare;
 
   // ---------- 프로필 사진 ----------
   // 사진은 서버로 보내지 않고, 브라우저 메모리의 임시 URL(blob:)로만 보여준다.
@@ -382,6 +383,10 @@
           <div class="total"><strong>${fmt(result.total)}</strong><span>점</span></div>
         </header>
         ${best.pts > 0 ? `<p class="highlight">가장 큰 점수를 받은 항목: <b>${best.title}</b> (${fmt(best.pts)} / ${best.max})</p>` : ''}
+        <div class="ai-reason" hidden>
+          <p class="ai-label">AI 추천 이유</p>
+          <div class="ai-text"></div>
+        </div>
         <div class="breakdown">${parts}</div>
         <div class="tag-list">${tags}</div>
         <div class="bio">
@@ -442,7 +447,102 @@
       <div class="step">
         <h3><span class="num">3</span>정렬</h3>
         <p>필터를 통과한 후보를 총점이 높은 순서로 정렬해서 상위 ${C.TOP_N}명을 추천해요. 사진, 자기소개, 이상형은 점수에 반영하지 않고 보여주기만 해요. 외모 판단은 점수가 아니라 직접 보고 하는 게 가장 정확하니까요.</p>
+      </div>
+
+      <div class="step">
+        <h3><span class="num">4</span>AI 추천 이유 (로컬 LLM)</h3>
+        <p>점수 계산이 끝나면 코드가 두 사람의 <b>공통점만</b> 문장으로 정리해서 이 PC의 로컬 LLM에 넘겨요. LLM은 그 공통점을 자연스럽게 엮는 역할만 하고, 점수나 순위에는 관여하지 않아요. 사진은 넘기지 않아요.</p>
+        <ul>
+          <li>만들어진 문장은 해요체, 금지어(완벽·운명 등), 한자·영어·숫자 포함 여부를 코드로 검사해요.</li>
+          <li>규칙을 어기면 한 번 다시 쓰게 하고, 그래도 안 되면 공통점 목록을 그대로 보여줘요.</li>
+        </ul>
+        <p id="ai-status" class="ai-status">로컬 AI 연결을 확인하고 있어요…</p>
       </div>`;
+  }
+
+  // ---------- AI 추천 이유 (로컬 LLM) ----------
+  const LLM = window.MatchLLM;
+  let aiRun = null; // 진행 중인 생성. 답변을 수정하면 취소한다.
+
+  function setAi(box, state, text) {
+    box.dataset.state = state;
+    box.querySelector('.ai-text').textContent = text;
+  }
+
+  // 규칙을 끝내 지키지 못하면 모델 문장 대신 공통점 목록을 보여준다.
+  function setAiFacts(box, facts) {
+    box.dataset.state = 'facts';
+    box.querySelector('.ai-label').textContent = '공통점 요약';
+    const list = document.createElement('ul');
+    facts.forEach(f => {
+      const li = document.createElement('li');
+      li.textContent = f;
+      list.appendChild(li);
+    });
+    box.querySelector('.ai-text').replaceChildren(list);
+  }
+
+  function renderAiStatus(status) {
+    const el = $('#ai-status');
+    if (!el) return;
+    const model = LLM.CONFIG.model;
+    if (status.ok) {
+      el.dataset.state = 'ok';
+      el.textContent = `로컬 AI(${model})가 연결되어 있어요. 추천 이유는 이 PC 안에서만 만들어지고 외부로 전송되지 않아요.`;
+    } else if (status.reason === 'no-model') {
+      el.dataset.state = 'off';
+      el.textContent = `Ollama는 실행 중이지만 ${model} 모델이 없어요. 터미널에서 'ollama pull ${model}'을 실행해 주세요.`;
+    } else {
+      // 서버가 꺼져 있는 것과 접근 허용(CORS)이 안 된 것은 브라우저에서 구분할 수 없어서 둘 다 안내한다.
+      el.dataset.state = 'off';
+      el.innerHTML = `
+        <b>로컬 AI가 연결되지 않아 기본 설명만 보여드려요.</b><br>
+        Ollama가 설치된 PC라면 아래 두 가지를 확인해 주세요.
+        <ol>
+          <li>Ollama가 실행 중인지 (작업 표시줄이나 메뉴 막대의 Ollama 아이콘)</li>
+          <li>이 사이트의 접근을 허용했는지: <code>OLLAMA_ORIGINS</code>에 <code>${esc(location.origin)}</code> 등록 후 Ollama 재시작</li>
+        </ol>
+        <a href="https://github.com/pikidle/Looks-are-everything#다른-pc에서-ai-추천-이유-켜기" target="_blank" rel="noopener">설정 방법 자세히 보기</a>`;
+    }
+  }
+
+  async function runAi(me, top) {
+    if (aiRun) aiRun.abort();
+    const ctrl = new AbortController();
+    aiRun = ctrl;
+
+    const status = await LLM.checkAvailable();
+    if (ctrl.signal.aborted) return;
+    renderAiStatus(status);
+    if (!status.ok) return;
+
+    const boxes = [...document.querySelectorAll('#results .ai-reason')];
+    boxes.forEach((box, i) => {
+      box.hidden = false;
+      setAi(box, 'waiting', i === 0 ? 'AI 모델을 불러오고 있어요' : '차례를 기다리고 있어요');
+    });
+
+    for (let i = 0; i < top.length; i++) {
+      const box = boxes[i];
+      if (i > 0) setAi(box, 'waiting', 'AI가 추천 이유를 쓰고 있어요');
+      try {
+        const out = await LLM.explain(
+          { me, candidate: top[i].candidate, parts: top[i].parts, isRare },
+          {
+            signal: ctrl.signal,
+            onToken: text => setAi(box, 'streaming', text),
+            onRetry: () => setAi(box, 'waiting', '문장을 한 번 더 다듬고 있어요'),
+          },
+        );
+        if (ctrl.signal.aborted) return;
+        if (out.source === 'llm') setAi(box, 'done', out.text);
+        else if (out.source === 'fallback') setAiFacts(box, out.facts);
+        else box.hidden = true;
+      } catch (err) {
+        if (ctrl.signal.aborted) return;
+        setAi(box, 'error', 'AI 설명을 만들지 못했어요. Ollama가 실행 중인지 확인해 주세요.');
+      }
+    }
   }
 
   // ---------- 화면 전환 + 진행도 게이지 ----------
@@ -508,6 +608,7 @@
   }
 
   function start() {
+    if (aiRun) aiRun.abort();
     $('#intro').hidden = true;
     $('#results').hidden = true;
     $('#logic').hidden = true;
@@ -538,6 +639,7 @@
       $('#results').hidden = false;
       $('#logic').hidden = false;
       window.scrollTo({ top: 0 });
+      runAi(me, rec.top);
     }, 650);
   }
 
